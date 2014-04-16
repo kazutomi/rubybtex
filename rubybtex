@@ -1,0 +1,513 @@
+#!/usr/bin/ruby
+# $Id: rubybtex,v 1.7 2005/07/07 11:36:34 tominaga Exp $
+=begin
+Copyright (C) 2004 Kazuto Tominaga.  All rights reserved.
+
+You can do to this software any combination of the following:
+use, copy, modify, and distribute (henceforth called Activity),
+provided that the purpose of your Activity is not directly related
+to any of the following:
+
+* aggravating confrontation among any groups of people
+* exacerbating the situation of poverty and famine
+* encouraging discrimination among any groups of people
+* causing distrust, anxiety, or hostility among any people
+* hurting somebody physically or mentally
+
+This software is here as it is.  It has no specification that
+it shall abide by, it has no correct behavior in any sense,
+and it does not have any kind of expressed or implied warranty.
+I have no responsibility for any result, any trouble, any damage,
+or any loss related to your Activity.
+=end
+
+# Supporting routines required by the formatter
+require 'rubybsup.rb'
+
+# The following variables must be defined by the style file
+$entrytypes = Array.new
+$styles = Hash.new
+
+# Main part
+# (not many things to change below this line)
+
+$bbl = nil
+$log = $stderr
+
+$cites = Array.new
+$db = Hash.new
+$fname = nil
+$line = 0
+$cite = nil	# current citation
+
+$preamble = ''
+$stringtable = Hash.new		# keys are in lower case
+$includeallcitations = false
+
+# for lexical analyzer (lexinit, gettoken)
+$buf = nil
+$nexttoken = nil
+$inbody = nil		# meaning of braces changes when it's in bodies or outside
+
+def getcitations(aux)
+  bst = nil
+  dbs = []
+  open(aux) do |f|
+    f.each do |l|
+      if /^\\citation\{(.*?)\}/ =~ l 
+	if $1 == '*'
+	  $includeallcitations = true
+	elsif not $cites.include?($1)
+	  $cites << $1
+	else
+	  # has already appeared
+	end
+      elsif /^\\bibstyle\{(.*?)\}/ =~ l
+	bst = $1
+      elsif /^\\bibdata\{(.*?)\}/ =~ l
+	dbs += $1.split(',')
+      end
+    end
+  end
+  if !bst
+    $log.puts "No bibliographystyle is specified"
+  end
+  if dbs.size == 0
+    $log.puts "No bibliography database is specified"
+  end
+  if !bst or dbs.size == 0
+    exit 1
+  end
+  return [ bst, dbs ]
+end
+
+# Lexcal analyzer with one token prefetch
+#   file -> $buf -> $nexttoken -> token to return
+#   nil for $buf and $nexttoken means EOF.
+#   '' for them means just empty.
+#   n.b.: getnext and $nexttoken deal with raw tokens (# is a token).
+#         gettoken returns processed tokens (never returns #).
+#   You can safely call fillbuf and getnext at any time.
+# Assumption: no token is cut across multiple lines
+
+def lexinit
+  $buf = ''
+  $nexttoken = ''
+  $line = 1
+end
+
+def curline	# current line number
+  nl = $buf.count("\n")
+  $line - nl
+end
+
+def fillbuf(f)		# makes $buf have at least one non-whitespace character and return
+  if $buf.nil?
+    # already EOF
+    return nil
+  end
+  while /^\s*\z/ =~ $buf
+    l = f.gets
+    if l.nil?
+      $buf = nil
+      return nil	# XXX: ignore spaces at EOF
+    end
+    $line += l.count("\n")
+    $buf += l
+  end
+  # $stderr.puts "debug: fillbuf returning '#{$buf}'"
+  return $buf
+end
+
+def getstrliteral(f)
+  term = nil
+  if $buf[0..0] == '{'
+    term = '}'
+  elsif $buf[0..0] == '"'
+    term = '"'
+  else
+    $stderr.puts "internal error: getstrliteral called with start of $buf '#{$buf[0..10]}'" +
+      " (file #{$fname}, line #{curline})"
+    exit 1
+  end
+  $buf = $buf[1..-1]
+  level = 0
+  s = ''
+  state = :notbackslashed
+  startline = curline
+  while true
+    fillbuf(f)
+    if $buf == nil
+      $stderr.puts "File #{$fname} ends within a group (starting at line #{startline})"
+      exit 1
+    end
+    # $stderr.puts "debug: in getstrliteral: state #{state.to_s}, level #{level}, $buf '#{$buf}'"
+    c = $buf[0..0]
+    $buf = $buf[1..-1]
+    case state
+    when :notbackslashed
+      if c == term
+	break if level == 0
+      end
+      if c == '}'
+	s += c
+	level -= 1
+      elsif c == '{'
+	s += c
+	level += 1
+      elsif c == '\\'
+	s += c
+	state = :backslashed
+      else
+	s += c
+      end
+    when :backslashed
+      s += c
+      state = :notbackslashed
+    else
+      $stderr.puts "internal error: unknown state #{state.to_s} in getstrliteral"
+      exit 1
+    end
+  end
+  # $stderr.puts "debug: getstrliteral returns {#{s}}"
+  s
+end
+
+def getbare(f)
+  $buf.sub!(/^\s*/, '')		# can be $buf.lstrip! in ruby 1.7
+  if $buf == ''
+    $log.puts "algorithm inconsistency: $buf must contain non-space but is #{$buf}"
+    exit 1
+  end
+  if /["#%'(),={}]/ =~ $buf[0..0]	# see Lamport's LaTeX Book, B.1.3
+    token = $buf[0..0]
+    $buf = $buf[1..-1]
+  else
+    /^[^"#%'(),={}\s]+/ =~ $buf
+    token = $&
+    $buf = $'
+  end
+  # $stderr.puts "debug: getbare returns #{token}, $buf is '#{$buf}'"
+  return token
+end
+
+def getnext(f)
+  if $nexttoken.nil?
+    # already EOF
+    return nil
+  end
+  if $nexttoken != ''
+    # we have the token already
+    return $nexttoken
+  end
+  fillbuf(f)
+  if $buf.nil?
+    $nexttoken = nil
+    return nil
+  end
+
+  # strip leading white spaces (we are outside string literal now)
+  /^\s*/ =~ $buf
+  $buf = $'
+
+  if /^"/ =~ $buf
+    $nexttoken = getstrliteral(f)
+  elsif $inbody and /^\{/ =~ $buf
+    $nexttoken = getstrliteral(f)
+  else
+    $nexttoken = getbare(f)
+    if $stringtable.key?($nexttoken.downcase)
+      # $stderr.puts "debug: ident #{$nexttoken} found, replaced with #{$stringtable[$nexttoken.downcase]}"
+      $nexttoken = $stringtable[$nexttoken.downcase]
+    end
+  end
+  return $nexttoken
+end
+
+def gettoken(f)
+  getnext(f)
+  if $nexttoken.nil?
+    return nil
+  end
+  token = $nexttoken
+  while true
+    $nexttoken = ''
+    getnext(f)
+    if $nexttoken != '#'
+      break
+    end
+    $nexttoken = ''
+    getnext(f)
+    if $nexttoken.nil?
+      $log.puts "File #{$fname} ends with concatination operator #"
+      exit 1
+    end
+    token += $nexttoken
+  end
+  # $stderr.puts "debug: gettoken returns #{token}"
+  return token
+end
+
+def getassign(f)
+  # can expect ',', ')' or '}'
+  t = gettoken(f)
+  if t != ',' and t != ')' and t != '}'
+    $log.puts "Expected comma or right paren but got #{t} (file #{$fname}, line #{curline})"
+    exit 1
+  end
+  if t == ')' or t == '}'
+    return nil
+  end
+  k = gettoken(f)
+  if k == ')' or k == '}'
+    # $stderr.puts "(The entry ends with a comma; file #{$fname}, near line #{curline})"
+    return nil
+  end
+  equ = gettoken(f)
+  if equ != '='
+    $stderr.puts "Expected equal but got #{equ} (file #{$fname}, line #{curline})"
+    exit 1
+  end
+  v = gettoken(f)
+  # $stderr.puts "debug: getassign returns [ #{k}, #{v} ]"
+  return [k, v]
+end
+
+def readdata(etype, f, cite)
+  # $stderr.puts "debug readdata(#{etype}, <file>, #{cite}) called"
+  h = Hash.new
+  h['__entry_type'] = etype
+  while keyval = getassign(f)
+    h[keyval[0]] = keyval[1]
+  end
+  # getassign must have read ')' or '}' and throwed it away
+  $db[cite] = h
+end
+
+def readdatabase(db)
+  $fname = db
+  open(db) do |f|
+    lexinit
+    $inbody = false
+    state = :afterblock
+    type = nil
+    stringlhs = nil
+    while t = gettoken(f)
+      # $stderr.puts "debug: readdatabase: state #{state.to_s}, token #{t}"
+      case state
+      when :afterblock
+	if /^@/ !~ t
+	  next	# skip the comment
+	end
+	t = t[1..-1].downcase
+	if t == 'preamble'
+	  state = :pream_lparen
+	elsif t == 'string'
+	  state = :string_lparen
+	elsif $entrytypes.include?(t)
+	  type = t
+	  state = :afterentrytype
+	else
+	  $log.puts "Unknown entry type #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+      when :afterentrytype
+	if t != '(' and t != '{'
+	  $log.puts "Expected left paren but got #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+	$inbody = true
+	state = :afterlparen
+      when :afterlparen
+	if $includeallcitations
+	  if $cites.include?(t)
+	    $log.puts "Duplicated citation #{t} (file #{$fname}, line #{curline})"
+	  else
+	    $cites << t
+	  end
+	end
+	# XXX: this reads the whole data, regardless of which are actually used
+	readdata(type, f, t)
+	# readdata seeks after ')' or '}' at the end of the block
+	$inbody = false
+	state = :afterblock
+      when :pream_lparen
+	if t != '(' and t != '{'
+	  $log.puts "Expected left paren but got #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+	$inbody = true
+	state = :preamblebody
+      when :preamblebody
+	if t == ')' or t == '}'
+	  $log.puts "Empty preamble (file #{$fname}, line #{curline})"
+	  state = :afterblock
+	else
+	  $preamble += t
+	  state = :pream_rparen
+	end
+      when :pream_rparen
+	if t != ')' and t != '}'
+	  $log.puts "Only one text is allowed in the preamble; please use # to concatinate (process anyway)" +
+	    "(file #{$fname}, line #{curline})"
+	  $preamble += t
+	  state = :pream_rparen
+	else
+	  $inbody = false
+	  state = :afterblock
+	end
+      when :string_lparen
+	if t != '(' and t != '{'
+	  $log.puts "Expected left paren but got #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+	$inbody = true
+	state = :string_lhs
+      when :string_lhs
+	stringlhs = t
+	state = :string_equ
+      when :string_equ
+	if t != '='
+	  $log.puts "Expected equal sign but got #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+	state = :string_rhs
+      when :string_rhs
+	$stringtable[stringlhs.downcase] = t
+	state = :string_end
+      when :string_end
+	if t == ','
+	  $log.puts "Only one assignment is allowed in the string body; process anyway" +
+	    "(file #{$fname}, line #{curline})"
+	  state = :string_lhs
+	elsif t == ')' or t == '}'
+	  $inbody = false
+	  state = :afterblock
+	else
+	  $log.puts "Expected rparen but got #{t} (file #{$fname}, line #{curline})"
+	  exit 1
+	end
+      else
+	$stderr.puts "internal error: unknown state #{state.to_s}"
+	exit 1
+      end
+    end
+  end
+end
+
+def doformat
+  etype = $db[$cite]['__entry_type']
+  if $db[$cite].key?('crossref')
+    etype += '_xref'
+  end
+  style = $styles[etype]
+  if style.nil?
+    $log.puts "No style for #{$cite} (type #{etype}); skipped"
+    return
+  end
+  s = style.dup
+
+  #
+  # . is a command to add a period
+  #
+  s.gsub!(/\\\./, "\002")
+  s.gsub!(/\./, "\001")		# XXX: assuming \001 never appears in text
+  s.gsub!("\002", '.')
+  # $log.puts "debug: real pattern is #{s}"
+
+  while /\(:((.|\n)*?)\[:(.*?):\]((.|\n)*?):\)/ =~ s
+    field = $3
+    preopt = $1
+    postopt = $4
+    pre = $`
+    post = $'
+    fieldval = nil
+    required = nil
+    if field[-1..-1] == '*'
+      required = false
+      field = field[0..-2]
+    else
+      required = true
+    end
+    formatter = ("f_" + field)
+    if not $formatter.respond_to?(formatter)
+      $log.puts "Formatting function #{formatter} not defined"
+      exit 1
+    end
+    fieldval = $formatter.send(formatter)
+    if fieldval.nil?
+      if required
+	$log.puts "Required field missing: entry #{$cite}, type #{$db[$cite]['__entry_type']}, field #{field}"
+      end
+      s = pre + post
+    else
+      s = pre + preopt + fieldval + postopt + post
+    end
+  end
+
+  # process addperiod
+  s.gsub!(/\.\001/, '.')
+  s.gsub!(/\001/, '.')
+
+  $bbl.puts s
+end
+
+def getargs
+  fn = ARGV[0]
+  if not fn
+    $stderr.puts "usage: #{$0} <aux file>"
+    exit 1
+  end
+  if /\.aux\z/ =~ fn
+    fn = fn[0..-5]
+  end
+  fn
+end
+
+def main
+  trunk = getargs
+  auxf = trunk + '.aux'
+  bblf = trunk + '.bbl'
+
+  bstf, dbfs = getcitations(auxf)
+
+  $cites = [] if $includeallcitations
+
+  require (bstf + '_bst.rb')
+  $formatter = Formatter.new
+
+  $bbl = open(bblf, "w")
+
+  dbfs.each do |dbf|
+    dbf += '.bib'
+    readdatabase(dbf)
+  end
+
+  if $preamble != ''
+    $bbl.puts $preamble
+    $bbl.puts
+  end
+
+  s = $formatter.widestlabel
+  $bbl.puts "\\begin{thebibliography}{#{s}}"
+
+  $formatter.sort
+
+  $bbl.puts
+  $cites.each do |c|
+    $cite = c
+    if $db[$cite].nil?
+      $log.puts "*** Entry #{c} not found in the database; skipping"
+      next
+    end
+    # $stderr.puts "debug: Processing #{c}"
+    $bbl.puts "\\bibitem{#{$cite}}"
+    doformat
+    $bbl.puts
+  end
+  $bbl.puts '\end{thebibliography}'
+end
+
+main
+
+# EOF
