@@ -1,24 +1,4 @@
-# $Id: mitalife_bst.rb,v 1.15 2007/09/05 12:33:34 tominaga Exp $
-=begin
-Copyright (C) 2004, 2007 Kazuto Tominaga.  All rights reserved.
-
-You can do to this software any combination of the following:
-use, copy, modify, and distribute (henceforth called Activity),
-provided that the purpose of your Activity is not directly related
-to any of the following:
-
-* aggravating confrontation among any groups of people
-* exacerbating the situation of poverty and famine
-* encouraging discrimination among any groups of people
-* causing distrust, anxiety, or hostility among any people
-* hurting somebody physically or mentally
-
-This software is here as it is.  It has no specification that
-it shall abide by, it has no correct behavior in any sense,
-and it does not have any kind of expressed or implied warranty.
-I have no responsibility for any result, any trouble, any damage,
-or any loss related to your Activity.
-=end
+# coding: utf-8
 
 require 'rubybsup.rb'
 
