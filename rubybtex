@@ -1,8 +1,14 @@
 #!/usr/bin/env ruby
 # coding: utf-8
+#
+# rubybtex - RubyBTeX main command
+#
+# Copyright (c) 2014 Kazuto Tominaga
+#
+# This software is released under the MIT License.
+# http://opensource.org/licenses/mit-license.php
 
 # Supporting routines required by the formatter
-
 require_relative 'rubybsup.rb'
 
 # The following variables must be defined by the style file

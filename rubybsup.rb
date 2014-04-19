@@ -1,4 +1,11 @@
 # coding: utf-8
+#
+# rubybsup.rb - Supporting modules for RubyBTeX
+#
+# Copyright (c) 2014 Kazuto Tominaga
+#
+# This software is released under the MIT License.
+# http://opensource.org/licenses/mit-license.php
 
 module NameFormatter
   def analyze_name(name)

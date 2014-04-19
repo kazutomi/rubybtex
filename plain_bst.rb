@@ -1,4 +1,11 @@
 # coding: utf-8
+#
+# plain_bst.rb - RubyBTeX plain style file
+#
+# Copyright (c) 2014 Kazuto Tominaga
+#
+# This software is released under the MIT License.
+# http://opensource.org/licenses/mit-license.php
 
 require_relative 'rubybsup.rb'
 

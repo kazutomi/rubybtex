@@ -32,3 +32,7 @@ A sample session is a follows:
 ## Bugs
 
 RubyBTeX is not fully compatible with BibTeX; neither the style files are.
+
+## License
+
+This software is released under the MIT License; see LICENSE.txt.
