@@ -1,4 +1,11 @@
 # coding: utf-8
+#
+# mitalife_bst.rb - RubyBTeX style file for Artificial Life Journal
+#
+# Copyright (c) 2014 Kazuto Tominaga
+#
+# This software is released under the MIT License.
+# http://opensource.org/licenses/mit-license.php
 
 require_relative 'rubybsup.rb'
 
