@@ -1,6 +1,6 @@
 # coding: utf-8
 
-require 'rubybsup.rb'
+require_relative 'rubybsup.rb'
 
 $entrytypes = [ 'article', 'book', 'booklet', 'conference',
   'inbook', 'incollection', 'inproceedings', 'manual', 'mastersthesis',

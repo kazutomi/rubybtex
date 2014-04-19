@@ -3,7 +3,7 @@
 
 # Supporting routines required by the formatter
 
-require 'rubybsup.rb'
+require_relative 'rubybsup.rb'
 
 # The following variables must be defined by the style file
 $entrytypes = Array.new
@@ -454,7 +454,7 @@ def main
 
   $cites = [] if $includeallcitations
 
-  require (bstf + '_bst.rb')
+  require_relative (bstf + '_bst.rb')
   $formatter = Formatter.new
 
   $bbl = open(bblf, "w")
