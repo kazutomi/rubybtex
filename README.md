@@ -15,6 +15,13 @@ The latter is the one for ALJ.
 
 Style files are written in Ruby, so it may be easier to customize them than doing it by adjusting BibTeX's .bst files.
 
+### A bit of words about its history
+
+I wrote this program in 2004 just for my need in submitting a paper.
+At that time, I knew only little about Ruby,
+so the code hardly uses Ruby's nice features (it's even not object-oriented!);
+please do not expect much.
+
 ## Usage
 
 1. Make a .tex file with \bibliographystyle and \bibliography in the same way as using BibTeX.
