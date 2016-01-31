@@ -31,7 +31,7 @@ A sample session is a follows:
 
 ## Bugs
 
-RubyBTeX is not fully compatible with BibTeX; neither the style files are.
+RubyBTeX is not fully compatible with BibTeX; neither are the style files.
 
 ## License
 
