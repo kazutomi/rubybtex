@@ -53,17 +53,15 @@ def getcitations(aux)
 	bst = $1
       elsif /^\\bibdata\{(.*?)\}/ =~ l
 	dbs += $1.split(',')
+      elsif /^\\@input\{(.*?)\.aux\}/ =~ l
+        bst2, dbs2 = getcitations("#{$1}.aux")
+        if bst2
+          # appearing later is taken
+          bst = bst2
+        end
+        dbs += dbs2
       end
     end
-  end
-  if !bst
-    $log.puts "No bibliographystyle is specified"
-  end
-  if dbs.size == 0
-    $log.puts "No bibliography database is specified"
-  end
-  if !bst or dbs.size == 0
-    exit 1
   end
   return [ bst, dbs ]
 end
@@ -457,6 +455,15 @@ def main
   bblf = trunk + '.bbl'
 
   bstf, dbfs = getcitations(auxf)
+  if !bstf
+    $log.puts "No bibliographystyle is specified"
+  end
+  if dbfs.size == 0
+    $log.puts "No bibliography database is specified"
+  end
+  if !bstf or dbfs.size == 0
+    exit 1
+  end
 
   $cites = [] if $includeallcitations
 
